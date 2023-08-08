@@ -57,8 +57,8 @@ const server = new ApolloServer({
   },
   plugins: [
     ApolloServerPluginDrainHttpServer({ httpServer }),
-    //apolloRateLimiter(apolloConfig),
-    //apolloEndpointMonitor(monitorConfig)
+    apolloRateLimiter(apolloConfig),
+    apolloEndpointMonitor(monitorConfig)
   ],
 });
 
@@ -69,8 +69,8 @@ server.start().then(() => {
     json(),
     expressMiddleware(server, {
       context: 
-        async ({ req }) => ({ token: req.headers.token }),
-        //gleiphqlContext
+        //async ({ req }) => ({ token: req.headers.token }),
+        gleiphqlContext
     }),
   );
 
