@@ -1,59 +1,81 @@
-const express = require('express');
-const { graphqlHTTP } = require('express-graphql');
-// schema for locally created data (books/authors)
-// const schema = require('./schema/booksSchema');
-// schema for star wars api
-const schema = require('./schema/starWarsSchema');
+// testing npm package install
+import { apolloRateLimiter, apolloEndpointMonitor, gleiphqlContext } from '@larkinaj/test2';
+import { startStandaloneServer }  from '@apollo/server/standalone';
+
+//const { graphqlHTTP } = require('express-graphql');
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@apollo/server/express4';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import json from 'body-parser';
+import schema from './schema/starWarsSchema.js';
+import {
+  fetchFilmById,
+  fetchPersonById,
+  fetchPlanetById,
+  fetchSpeciesById,
+  fetchStarshipById,
+  fetchVehicleById,
+} from './schema/starWarsResolvers.js';
+
+
+// Configuration for the expressEndpointMonitor middleware.
+const monitorConfig = {
+  gliephqlUsername: 'andrew@gmail.com',
+  gliephqlPassword: 'password',
+};
+
+const apolloConfig = {
+  complexityLimit: 3000,
+  paginationLimit: 10,
+  monitor: true,
+  refillTime: 300000,   // 5 minutes
+  refillAmount: 1000,
+  redis: false
+}
+
 
 const app = express();
+const httpServer = http.createServer(app);
 
-app.use('/graphql', graphqlHTTP({
+// console.log('schema:', schema); // Logging for debugging
+// console.log('resolvers:', resolvers); // Logging for debugging
+
+const server = new ApolloServer({
   schema,
-  graphiql: true
-}));
-
-// add other code here:
-
-const port = 8000
-app.listen(port, () => {
-  console.log(`Server now LiSteNiNg on http://localhost:${port}/graphql ~`)
+  resolvers: {
+    Query: {
+      film: fetchFilmById,
+      people: fetchPersonById,
+      planet: fetchPlanetById,
+      species: fetchSpeciesById,
+      starship: fetchStarshipById,
+      vehicle: fetchVehicleById,
+    },
+  },
+  plugins: [
+    ApolloServerPluginDrainHttpServer({ httpServer }),
+    //apolloRateLimiter(apolloConfig),
+    //apolloEndpointMonitor(monitorConfig)
+  ],
 });
 
+server.start().then(() => {
+  app.use(
+    '/graphql',
+    cors(),
+    json(),
+    expressMiddleware(server, {
+      context: 
+        async ({ req }) => ({ token: req.headers.token }),
+        //gleiphqlContext
+    }),
+  );
 
-
-// Code from Jiecheng
-// const printedSchema = graphql.printSchema(schema);
-// // console.log(printedSchema);
-// const schemaAST = graphql.parse(printedSchema);
-// //console.log('this is the parsedSchema:', schemaAST);
-// let fields = 0;
-// let types = 0;
-// let lists = 0;
-
-// graphql.visit(schemaAST, {
-//   [graphql.Kind.OBJECT_TYPE_DEFINITION]: {
-//     enter(node){
-//       console.log('this is the current type:', node.name.value);
-//       types++;
-//     }
-//   },
-//   [graphql.Kind.FIELD_DEFINITION]: {
-//     enter(node){
-//       console.log('this is the node:', node);
-//       console.log('this is the current field:', node.name.value);
-//       if(node.type.kind === 'ListType') lists++;
-//       fields++;
-//     }
-//   },
-//   [graphql.Kind.LIST]: {
-//     enter(node){
-//       console.log('this is the current list:', node.name.value);
-//     }
-//   }
-// });
-
-// console.log('This is the number of fields:', fields);
-// console.log('This is the number of types:', types);
-// console.log('This is the number of lists:', lists);
-
+  httpServer.listen({ port: 4000 }, () => {
+    console.log(`🚀 Server is LIVE at http://localhost:4000/graphql`);
+  });
+});
 

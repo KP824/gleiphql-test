@@ -1,7 +1,8 @@
-const _ = require('lodash');
-const client = require('../db');
 
-const {
+import _ from 'lodash';
+import client from '../db.js';
+
+import {
   GraphQLObjectType,
   GraphQLString,
   GraphQLSchema,
@@ -9,11 +10,11 @@ const {
   GraphQLInt,
   GraphQLList,
   parse,
-} = require('graphql');
+} from 'graphql';
 
 
 // define types:
-const FilmType = new GraphQLObjectType({
+export const FilmType = new GraphQLObjectType({
   name: 'Film',
   fields: () => ({
     title: { type: GraphQLString },
@@ -35,7 +36,7 @@ const FilmType = new GraphQLObjectType({
 });
 
 
-const PeopleType = new GraphQLObjectType({
+export const PeopleType = new GraphQLObjectType({
   name: 'People',
   fields: () => ({
     name: { type: GraphQLString },
@@ -76,7 +77,7 @@ const PeopleType = new GraphQLObjectType({
 });
 
 
-const PlanetType = new GraphQLObjectType({
+export const PlanetType = new GraphQLObjectType({
   name: 'Planet',
   fields: () => ({
     name: { type: GraphQLString },
@@ -107,7 +108,7 @@ const PlanetType = new GraphQLObjectType({
 });
 
 
-const SpeciesType = new GraphQLObjectType({
+export const SpeciesType = new GraphQLObjectType({
   name: 'Species',
   fields: () => ({
     name: { type: GraphQLString },
@@ -138,7 +139,7 @@ const SpeciesType = new GraphQLObjectType({
 });
 
 
-const StarshipType = new GraphQLObjectType({
+export const StarshipType = new GraphQLObjectType({
   name: 'Starship',
   fields: () => ({
     name: { type: GraphQLString },
@@ -172,7 +173,7 @@ const StarshipType = new GraphQLObjectType({
 });
 
 
-const VehicleType = new GraphQLObjectType({
+export const VehicleType = new GraphQLObjectType({
   name: 'Vehicle',
   fields: () => ({
     name: { type: GraphQLString },
@@ -198,7 +199,7 @@ const VehicleType = new GraphQLObjectType({
 });
 
 // Defining functions to fetch lists of fields
-const fetchFilmsForPerson = async(parent) => {
+export const fetchFilmsForPerson = async(parent) => {
   try {
     const personId = parent.id;
     const query = `
@@ -218,7 +219,7 @@ const fetchFilmsForPerson = async(parent) => {
 };
 
 
-const fetchCharactersForFilm = async(parent) => {
+export const fetchCharactersForFilm = async(parent) => {
   try {
     const filmId = parent.id;
     const query = `
@@ -239,7 +240,7 @@ const fetchCharactersForFilm = async(parent) => {
 };
 
 
-const fetchSpeciesForPerson = async(parent) => {
+export const fetchSpeciesForPerson = async(parent) => {
   try {
     const personId = parent.id;
     const query = `
@@ -260,7 +261,7 @@ const fetchSpeciesForPerson = async(parent) => {
 };
 
 
-const fetchStarshipsForPerson = async(parent) => {
+export const fetchStarshipsForPerson = async(parent) => {
   try {
     const starshipId = parent.id;
     const query = `
@@ -280,7 +281,7 @@ const fetchStarshipsForPerson = async(parent) => {
   }
 };
 
-const fetchVehiclesForPerson = async(parent) => {
+export const fetchVehiclesForPerson = async(parent) => {
   try {
     const vehicleId = parent.id;
     const query = `
@@ -300,7 +301,7 @@ const fetchVehiclesForPerson = async(parent) => {
   }
 };
 
-const fetchPeopleForPlanets = async(parent) => {
+export const fetchPeopleForPlanets = async(parent) => {
   try {
     const peopleId = parent.id;
     const query = `
@@ -320,7 +321,7 @@ const fetchPeopleForPlanets = async(parent) => {
   }
 };
 
-const fetchFilmsForPlanets = async(parent) => {
+export const fetchFilmsForPlanets = async(parent) => {
   try {
     const filmId = parent.id;
     const query = `
@@ -341,7 +342,7 @@ const fetchFilmsForPlanets = async(parent) => {
 };
 
 
-const fetchPeopleForSpecies = async(parent) => {
+export const fetchPeopleForSpecies = async(parent) => {
   try {
     const personId = parent.id;
     const query = `
@@ -360,7 +361,7 @@ const fetchPeopleForSpecies = async(parent) => {
   }
 };
 
-const fetchFilmsForSpecies = async(parent) => {
+export const fetchFilmsForSpecies = async(parent) => {
   try {
     const filmId = parent.id;
     const query = `
@@ -380,7 +381,7 @@ const fetchFilmsForSpecies = async(parent) => {
   }
 };
 
-const fetchFilmsForStarships = async(parent) => {
+export const fetchFilmsForStarships = async(parent) => {
   try {
     const filmId = parent.id;
     const query = `
@@ -402,7 +403,7 @@ const fetchFilmsForStarships = async(parent) => {
 };
 
 
-const fetchPilotsForStarships = async(parent) => {
+export const fetchPilotsForStarships = async(parent) => {
   try {
     const pilotId = parent.id;
     const query = `
@@ -423,7 +424,7 @@ const fetchPilotsForStarships = async(parent) => {
 };
 
 
-const fetchFilmsForVehicles = async(parent) => {
+export const fetchFilmsForVehicles = async(parent) => {
   try {
     const filmId = parent.id;
     const query = `
@@ -443,11 +444,11 @@ const fetchFilmsForVehicles = async(parent) => {
   }
 };
 
-module.exports = {
-  FilmType,
-  PeopleType,
-  PlanetType,
-  SpeciesType,
-  StarshipType,
-  VehicleType,
-};
+// export default {
+//   FilmType,
+//   PeopleType,
+//   PlanetType,
+//   SpeciesType,
+//   StarshipType,
+//   VehicleType,
+// };

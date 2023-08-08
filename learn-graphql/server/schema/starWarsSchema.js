@@ -1,7 +1,7 @@
 // Schema to explor the star wars api
-const { GraphQLSchema } = require('graphql');
-const RootQuery = require('./starWarsQueries');
-const Mutation = require('./starWarsMutations');
+import { GraphQLSchema } from 'graphql';
+import RootQuery from './starWarsQueries.js';
+import Mutation from './starWarsMutations.js';
 
 
 const schema = new GraphQLSchema({
@@ -9,7 +9,7 @@ const schema = new GraphQLSchema({
   mutation: Mutation,
 });
 
-module.exports = schema;
+export default schema;
 
 
 

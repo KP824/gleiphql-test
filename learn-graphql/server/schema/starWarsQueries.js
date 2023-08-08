@@ -1,4 +1,4 @@
-const {
+import {
   GraphQLObjectType,
   GraphQLString,
   GraphQLSchema,
@@ -6,16 +6,33 @@ const {
   GraphQLInt,
   GraphQLList,
   parse,
-} = require('graphql');
+} from 'graphql';
 // import connection to database
-const client = require('../db');
+import client from '../db.js';
 // import types for main query
-const { FilmType, PeopleType, PlanetType, SpeciesType, StarshipType, VehicleType } = require('./starWarsTypes');
+import { 
+  FilmType, 
+  PeopleType, 
+  PlanetType, 
+  SpeciesType, 
+  StarshipType, 
+  VehicleType 
+} from './starWarsTypes.js';
+
+import {
+  fetchFilmById,
+  fetchPersonById,
+  fetchPlanetById,
+  fetchSpeciesById,
+  fetchStarshipById,
+  fetchVehicleById,
+} from './starWarsResolvers.js';
+
 
 
 // Root Query:
 const RootQuery = new GraphQLObjectType({
-  name: 'RootQueryType',
+  name: 'Query',
   // https://swapi.dev/documentation#root, Can declare all the foot fields here:
   fields: {
     film: {
@@ -23,99 +40,40 @@ const RootQuery = new GraphQLObjectType({
       args: { 
         id: { type: GraphQLInt } 
       },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM films WHERE id = $1';
-          const values = [args.id];
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch (error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch film`);
-        }
-      }
+      resolve: fetchFilmById,
     },
     // people (single)
     people: {
       type: PeopleType,
       args: { id: { type: GraphQLInt } },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM people WHERE id = $1';
-          const values = [args.id];
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch (error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch person`);
-        }
-      } 
+      resolve: fetchPersonById,
     },
     
     planet: {
       type: PlanetType,
       args: { id: { type: GraphQLInt } },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM planets WHERE id = $1';
-          const values = [args.id];
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch(error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch planets`);
-        }
-      }
+      resolve: fetchPlanetById,
     },
     
     species: {
       type: SpeciesType,
       args: { id: { type: GraphQLInt } },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM species WHERE id = $1';
-          const values = [args.id];
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch (error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch species`);
-        }
-      }
+      resolve: fetchSpeciesById,
     },
     
     starship: {
       type: StarshipType, 
       args: { id: { type: GraphQLInt } },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM starships WHERE id = $1';
-          const values = [args.id];
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch(error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch starship`);
-        }
-      }
+      resolve: fetchStarshipById,
     },
 
     vehicle: {
       type: VehicleType,
       args: { id: { type: GraphQLInt } },
-      resolve: async (_, args) => {
-        try {
-          const query = 'SELECT * FROM vehicles WHERE id = $1';
-          const response = await client.query(query, values);
-          return response.rows[0];
-        } catch(error) {
-          console.error(error);
-          throw new Error(`Error from RootQuery, failed to fetch vehicle`);
-        }
-      }
+      resolve: fetchVehicleById,
     },
   }
 });
 
 
-module.exports = RootQuery;
+export default RootQuery;

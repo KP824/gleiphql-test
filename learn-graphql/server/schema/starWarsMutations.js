@@ -1,20 +1,25 @@
-const { 
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+import { 
   GraphQLObjectType, 
   GraphQLInt,
   GraphQLString,
   GraphQLNonNull,
-} = require('graphql');
+} from 'graphql';
 // import connection to database
-const client = require('../db');
+import client from '../db.js';
 // import types for mutations query
-const { 
+import { 
   FilmType, 
   PeopleType, 
   PlanetType, 
   SpeciesType, 
   StarshipType, 
   VehicleType 
-} = require('./starWarsTypes');
+} from './starWarsTypes.js';
+// import test from './starWarsTypes.js';
+
 
 const Mutation = new GraphQLObjectType({
   name: 'Mutation',
@@ -25,9 +30,9 @@ const Mutation = new GraphQLObjectType({
       type: FilmType,
       // defines the input arguments for the mutation
       args: {
-        title: { type: GraphQLNonNull(GraphQLString) },
-        episode_id: { type: GraphQLNonNull(GraphQLString) },
-        opening_crawl: { type: GraphQLNonNull(GraphQLString) },
+        title: { type: new GraphQLNonNull(GraphQLString) },
+        episode_id: { type: new GraphQLNonNull(GraphQLString) },
+        opening_crawl: { type: new GraphQLNonNull(GraphQLString) },
         director: { type: GraphQLString },
         producer: { type: GraphQLString },
         release_date: { type: GraphQLString },
@@ -70,7 +75,7 @@ const Mutation = new GraphQLObjectType({
     updateFilm: {
       type: FilmType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         title: { type: GraphQLString },
         episode_id: { type: GraphQLString },
         opening_crawl: { type: GraphQLString },
@@ -115,7 +120,7 @@ const Mutation = new GraphQLObjectType({
     deleteFilm: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -138,7 +143,7 @@ const Mutation = new GraphQLObjectType({
     createPerson: {
       type: PeopleType,
       args: {
-        name: { type: GraphQLNonNull(GraphQLString) },
+        name: { type: new GraphQLNonNull(GraphQLString) },
         birth_year: { type: GraphQLString },
         eye_color: { type: GraphQLString },
         gender: { type: GraphQLString },
@@ -183,7 +188,7 @@ const Mutation = new GraphQLObjectType({
     updatePerson: {
       type: PeopleType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         name: { type: GraphQLString },
         birth_year: { type: GraphQLString },
         eye_color: { type: GraphQLString },
@@ -232,7 +237,7 @@ const Mutation = new GraphQLObjectType({
     deletePerson: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -255,8 +260,8 @@ const Mutation = new GraphQLObjectType({
     createPlanet: {
       type: PlanetType,
       args: {
-        name: { type: GraphQLNonNull(GraphQLString) },
-        diameter: { type: GraphQLNonNull(GraphQLString) },
+        name: { type: new GraphQLNonNull(GraphQLString) },
+        diameter: { type: new GraphQLNonNull(GraphQLString) },
         rotation_period: { type: GraphQLString },
         orbital_period: { type: GraphQLString },
         gravity: { type: GraphQLString },
@@ -303,7 +308,7 @@ const Mutation = new GraphQLObjectType({
     updatePlanet: {
       type: PlanetType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         name: { type: GraphQLString },
         diameter: { type: GraphQLString },
         rotation_period: { type: GraphQLString },
@@ -356,7 +361,7 @@ const Mutation = new GraphQLObjectType({
     deletePlanet: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -379,7 +384,7 @@ const Mutation = new GraphQLObjectType({
     createSpecies: {
       type: SpeciesType,
       args: {
-        name: { type: GraphQLNonNull(GraphQLString) },
+        name: { type: new GraphQLNonNull(GraphQLString) },
         classification: { type: GraphQLString },
         designation: { type: GraphQLString },
         average_height: { type: GraphQLString },
@@ -428,7 +433,7 @@ const Mutation = new GraphQLObjectType({
     updateSpecies: {
       type: SpeciesType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         name: { type: GraphQLString },
         classification: { type: GraphQLString },
         designation: { type: GraphQLString },
@@ -481,7 +486,7 @@ const Mutation = new GraphQLObjectType({
     deleteSpecies: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -504,7 +509,7 @@ const Mutation = new GraphQLObjectType({
     createStarship: {
       type: StarshipType,
       args: {
-        name: { type: GraphQLNonNull(GraphQLString) },
+        name: { type: new GraphQLNonNull(GraphQLString) },
         model: { type: GraphQLString },
         starship_class: { type: GraphQLString },
         cost_in_credits: { type: GraphQLString },
@@ -530,7 +535,7 @@ const Mutation = new GraphQLObjectType({
 
           const values = [
             args.name, 
-            args.mode,
+            args.model,
             args.starship_class,
             args.cost_in_credits,
             args.length,
@@ -539,7 +544,6 @@ const Mutation = new GraphQLObjectType({
             args.MGLT,
             args.cargo_capacity,
             args.consumables,
-            args.consumable,
             args.url,
             args.created,
             args.edited
@@ -558,7 +562,7 @@ const Mutation = new GraphQLObjectType({
     updateStarship: {
       type: StarshipType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         name: { type: GraphQLString },
         model: { type: GraphQLString },
         starship_class: { type: GraphQLString },
@@ -617,7 +621,7 @@ const Mutation = new GraphQLObjectType({
     deleteStarship: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -640,7 +644,7 @@ const Mutation = new GraphQLObjectType({
     createVehicle: {
       type: VehicleType,
       args: {
-        name: { type: GraphQLNonNull(GraphQLString) },
+        name: { type: new GraphQLNonNull(GraphQLString) },
         model: { type: GraphQLString },
         vehicle_class: { type: GraphQLString },
         manufacturer: { type: GraphQLString },
@@ -691,7 +695,7 @@ const Mutation = new GraphQLObjectType({
     updateVehicle: {
       type: VehicleType,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
         name: { type: GraphQLString },
         model: { type: GraphQLString },
         vehicle_class: { type: GraphQLString },
@@ -746,7 +750,7 @@ const Mutation = new GraphQLObjectType({
     deleteVehicle: {
       type: GraphQLString,
       args: {
-        id: { type: GraphQLNonNull(GraphQLInt) },
+        id: { type: new GraphQLNonNull(GraphQLInt) },
       },
       resolve: async (_, { id }) => {
         try {
@@ -770,4 +774,4 @@ const Mutation = new GraphQLObjectType({
 });
 
 
-module.exports = Mutation;
+export default Mutation;

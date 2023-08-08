@@ -1,4 +1,7 @@
-const { Client } = require('pg');
+// 'pg' package is using CommonJS syntax for exports
+import pkg from 'pg';
+// using default exports to import the 'Client' class
+const { Client } = pkg;
 
 // Connection to database with star wars info
 const client = new Client({
@@ -11,4 +14,4 @@ const client = new Client({
 
 client.connect();
 
-module.exports = client;
+export default client;
