@@ -1,131 +1,51 @@
 import { Request, Response, NextFunction } from 'express';
-import { buildSchema, isAbstractType, GraphQLInterfaceType, isNonNullType, GraphQLType, GraphQLField, parse, GraphQLList, GraphQLObjectType, GraphQLSchema, TypeInfo, visit, visitWithTypeInfo, StringValueNode, getNamedType, GraphQLNamedType, getEnterLeaveForKind, GraphQLCompositeType, getNullableType, Kind, isListType, DocumentNode, DirectiveLocation, GraphQLUnionType, GraphQLNamedOutputType, getDirectiveValues, isCompositeType } from 'graphql';
+import {
+  buildSchema,
+  isAbstractType,
+  GraphQLInterfaceType,
+  isNonNullType,
+  GraphQLType,
+  GraphQLField,
+  parse,
+  GraphQLList,
+  GraphQLObjectType,
+  GraphQLSchema,
+  TypeInfo,
+  visit,
+  visitWithTypeInfo,
+  StringValueNode,
+  getNamedType,
+  GraphQLNamedType,
+  getEnterLeaveForKind,
+  GraphQLCompositeType,
+  getNullableType,
+  Kind,
+  isListType,
+  DocumentNode,
+  DirectiveLocation,
+  GraphQLUnionType,
+  GraphQLNamedOutputType,
+  getDirectiveValues,
+  isCompositeType,
+  GraphQLError,
+  FragmentDefinitionNode,
+  isInterfaceType,
+  isUnionType,
+  DefinitionNode,
+  OperationDefinitionNode,
+  isObjectType,
+} from 'graphql';
 import graphql from 'graphql';
-import cache from './cache.js';
-
-const testSDL = `
-directive @cost(value: Int) on FIELD_DEFINITION | ARGUMENT_DEFINITION
-directive @paginationLimit(value: Int) on FIELD_DEFINITION
-
-type Author {
-  id: ID! @cost(value: 1)
-  name: String @cost(value: 200) => typeInfo vs resolveInfo
-  books: [Book] @cost(value: 3)
-}
-
-type Book {
-  id: ID! @cost(value: 1)
-  title: String @cost(value: 2)
-  author: Author @cost(value: 3)
-}
-
-type Query {
-  authors: [Author] @cost(value: 2)
-  books(limit: Int @cost(value:10)): [Book] @cost(value: 2) @paginationLimit(value: 5)
-}
-      `
-
-      const testSDLPolymorphism = `
-      directive @cost(value: Int) on FIELD_DEFINITION | ARGUMENT_DEFINITION
-directive @paginationLimit(value: Int) on FIELD_DEFINITION
-
-type Author {
-  id: ID! @cost(value: 1)
-  name: String @cost(value: 200)
-  books: [Book] @cost(value: 3)
-}
-
-type Book {
-  id: ID! @cost(value: 1)
-  title: String @cost(value: 2)
-  author: Author @cost(value: 3)
-}
-
-union SearchResult = Author | Book
-
-type Query {
-  authors: [Author] @cost(value: 2)
-  books(limit: Int @cost(value:10)): [Book] @cost(value: 2) @paginationLimit(value: 5)
-  search(term: String): [SearchResult] @paginationLimit(value: 10)
-}
-`
-
-const testQueryPolymorphism = `
-query SearchQuery {
-  search(term: "example") {
-    ... on Author {
-      id
-      name
-    }
-    ... on Book {
-      id
-      title
-    }
-  }
-}
-`
-
-      const testQuery = `
-      query {
-        books(limit: 4) {
-          id
-          title
-          author {
-            name
-          }
-        }
-      }
-      `
-
-      const testQueryFrag = `
-      query {
-        ...BookFields
-      }
-
-      fragment BookFields on Query {
-        books(limit: 4) {
-          id
-          title
-          author {
-            name
-          }
-        }
-      }
-
-      `
+import fetch from 'node-fetch';
+import expressCache from './express-cache.js';
+import apolloCache from './apollo-cache.js';
 
 //To-dos
 
-//Resolve Relay convention breaking analysis
+//Resolve Relay convention breaking analysis <= check later
 //Resolve argument calls nested in list casing => should be resolved
-//Resolve polymorphism of union/interface types => close to resolution
-
-//What problems do you need to account for?
-
-//We are doing static analysis
-//We have very limited information before query execution
-  //Schema definition => which is also provided by the user (developer)
-  //Query => user (person querying developer's GraphQL information)
-  //Accounting for worst-case scenario => must account for worst case scenario for heuristic to be valubable
-    //External fetches => implement user configurability for cost of fields
-    //Resolver definition cannot be accessed by analysis because they do not exist in SDL => implement user configurability for cost
-
-//Static analysis
-  //User configurability of fields by directives
-  //
-// //sample schema to test directive work
-
-//further to-dos
-
-//modularize code, certain functions can be offloaded => mostly done
-//generate casing for mutations/subscriptions => haha maybe later
-//implement support for resolvers => check if resolvers are saved in schema => should be in okay state => need to figure out if resolver cost can be separated
-//fix typescript typing issues, define interfaces for complex object types passed to helper functions
-//attempt to refactor the class, to handle modularization of interdependent data structures using class state => mostly done
-//fix casing for argument implementation costs, need to multiply said cost with nestedLists, can possibly be resolved by simply coupling argumentCosts with baseVal
-//ensure that inline-fragments are appropriately handled
-//resolve calling for lists of unions
-
+//Do some work with variables
+//Take into account @skip directives
 
 //relevant interfaces
 interface TokenBucket {
@@ -145,14 +65,6 @@ interface PaginationDirectives {
   value: any,
 }
 
-interface ParentType {
-  fieldDef: GraphQLField<unknown, unknown, any>,
-  isList: boolean,
-  fieldDefArgs: readonly graphql.GraphQLArgument[],
-  currMult: number,
-  isUnion: boolean
-}
-
 //start of class
 
 class ComplexityAnalysis {
@@ -160,16 +72,18 @@ class ComplexityAnalysis {
   private config: any;
   private schema: GraphQLSchema;
   private parsedAst: DocumentNode;
-  private parentTypeStack: ParentType[] = [];
-  private currMult: number = 0;
+  private currMult: number = 1;
   private complexityScore = 0;
   private typeComplexity = 0;
-  private resolveComplexity = 0;
+  private variables: any;
+  private slicingArgs: string[] = ['limit', 'first', 'last']
+  private allowedDirectives: string[] = ['skip', 'include']
 
-  constructor(schema: GraphQLSchema, parsedAst: DocumentNode, config: any) {
+  constructor(schema: GraphQLSchema, parsedAst: DocumentNode, config: any, variables: any) {
     this.config = config;
     this.parsedAst = parsedAst;
     this.schema = schema
+    this.variables = variables;
   }
 
   traverseAST () {
@@ -178,262 +92,245 @@ class ComplexityAnalysis {
 
       console.log('This is the current currMult', this.currMult)
 
-      // console.log('parsedAst exists')
-
-      // console.log('schema', this.schema);
-
       const schemaType = new TypeInfo(this.schema)
 
       visit(this.parsedAst, visitWithTypeInfo(schemaType, {
         //use arrow function here within higher-order function in order to allow access to surrounding scope
-        enter: (node) => {
-          if(node.kind !== Kind.FIELD) return;
+        enter: (node, key, parent,  path, ancestors) => {
 
-          // console.log('Current node', node);
+          if(node.kind === Kind.DOCUMENT) {
+          console.log('ENTERING DOCUMENT NODE');
+          console.log('DOCUMENT NODE', node);
+          //casing for fragment definition, need to maintain parentTypeStack, and acknowledge fragDef exists
+          //but otherwise disregard
 
-          let baseVal = 1;
-          let internalPaginationLimit: number | null = null;
-          let argumentCosts = 0;
+          let baseMult = 1;
 
-          if (this.parentTypeStack.length === 0) this.currMult = 0;
+          const fragDefStore: Record<string, number> = {};
 
-          const parentType = schemaType.getParentType();
-
-          // console.log('ParentType', parentType);
-
-          if(!parentType) return;
-
-          // console.log('ParentType exists');
-
-          const fieldDef = parentType && isAbstractType(parentType) ? schemaType.getFieldDef() : parentType.getFields()[node.name.value];
-
-          if(!fieldDef) return;
-
-          const fieldDefArgs = fieldDef.args;
-          // console.log('These are relevant fieldArgs', fieldDef.args);
-          const fieldType = fieldDef.type;
-          const fieldTypeUnion = getNamedType(fieldType);
-          const isList = isListType(fieldType) || (isNonNullType(fieldType) && isListType(fieldType.ofType));
-          const isUnion = fieldTypeUnion instanceof GraphQLUnionType;
-          console.log('isUnion?', isUnion);
-          const argumentDirectiveCost = this.parseArgumentDirectives(fieldDef);
-          const directiveAdjustedBaseVal = this.parseDirectives(fieldDef, baseVal)
-
-          const subUnionType = this.hasUnionAncestor();
-
-          if (subUnionType) {
-            console.log('Field has union ancestor, complexity calculation should have been resolved in resolveUnionTypes of ancestor, aborting traversal')
-            const currMult = this.currMult
-            this.parentTypeStack.push({fieldDef, isList, fieldDefArgs, currMult, isUnion});
-            return;
-          }
-
-          if(argumentDirectiveCost) {
-            //list could be nested in another list, need to case out
-            argumentDirectiveCost.forEach((directive: any) => {
-              console.log('Attempting to resolve cost of resolving argument')
-              const directiveValue = Number(directive.directiveValue)
-              //simply appending this value to baseVal possibly resolves argument resolution calls in nestedLists
-              baseVal += directiveValue;
-              // argumentCosts += directiveValue;
-              })
-          }
-
-          baseVal = Number(directiveAdjustedBaseVal.costDirective);
-          if(directiveAdjustedBaseVal.paginationLimit) {
-            internalPaginationLimit = Number(directiveAdjustedBaseVal.paginationLimit);
-            console.log('Internal pagination limits', internalPaginationLimit);
-          }
-
-          if(isList === true && isUnion !== true) {
-            console.log(`${node.name.value} is a list`);
-            const argNode = node.arguments?.find(arg => (arg.name.value === 'limit' || arg.name.value === 'first' || arg.name.value === 'last' || arg.name.value === 'before' || arg.name.value === 'after'));
-            this.currMult = this.config.paginationLimit;
-
-            if(internalPaginationLimit) this.currMult = internalPaginationLimit;
-
-            if (argNode && argNode.value.kind === 'IntValue') {
-              const argValue = parseInt(argNode.value.value, 10);
-              console.log(`Found limit argument with value ${argValue}`);
-              //unclear how we want to handle this base behavior, may be best to create a default case that is editable by user
-              if(internalPaginationLimit) {
-                if(argValue > internalPaginationLimit) console.log('The passed in argument exceeds paginationLimit, define intended default behavior for this case')
-              }
-                this.currMult = argValue;
+          for(let i = 0; i < node.definitions.length; i++) {
+            const def = node.definitions[i] as DefinitionNode;
+            if(def.kind === 'FragmentDefinition'){
+              console.log('INSIDE FRAGMENT DEFINITIONS')
+              let selectionSet;
+              const fragDef = def as FragmentDefinitionNode;
+              const typeCondition = fragDef.typeCondition.name.value
+              const type = this.schema.getType(typeCondition);
+              selectionSet = fragDef.selectionSet;
+              const totalFragCost = this.resolveSelectionSet(selectionSet, type, schemaType, baseMult, [node], node, fragDefStore);
+              fragDefStore[typeCondition] = totalFragCost;
             }
-
-            console.log('Mult is now:', this.currMult);
-
-            this.resolveParentTypeStack(isList, argumentCosts, baseVal);
-
-            } else if (fieldTypeUnion instanceof GraphQLUnionType) {
-              const largestUnion = this.resolveUnionTypes(fieldTypeUnion, internalPaginationLimit, isList)
-              const currMult = largestUnion.containedMult
-              this.typeComplexity += largestUnion.cost;
-              this.parentTypeStack.push({fieldDef, isList, fieldDefArgs, currMult, isUnion});
-              return;
-
-            } else {
-              console.log(`This is the parentStack of the current GraphQL field type ${node.name.value}`, this.parentTypeStack);
-
-              this.resolveParentTypeStack(isList, argumentCosts, baseVal);
-            }
-              const currMult = this.currMult
-              this.parentTypeStack.push({fieldDef, isList, fieldDefArgs, currMult, isUnion});
-        },
-        leave:(node) => {
-          if (node.kind === Kind.FIELD) {
-            this.parentTypeStack.pop();
           }
-        }
+
+          console.log('fragment spread costs?', fragDefStore);
+
+          for(let i = 0; i < node.definitions.length; i++) {
+            const def = node.definitions[i] as DefinitionNode;
+            if(def.kind === 'OperationDefinition'){
+              let selectionSet;
+              const operationDef = def as OperationDefinitionNode;
+              const operationType = operationDef.operation;
+              const rootType = this.schema.getQueryType();
+              if(operationType === 'query') selectionSet = operationDef.selectionSet;
+              // console.log('selectionSet?', selectionSet)
+              const totalCost = this.resolveSelectionSet(selectionSet, rootType, schemaType, baseMult, [node], node, fragDefStore)
+              this.typeComplexity += totalCost;
+            }
+          }
+          //must create interface casing, grabbing implememting types if fragment spreads are used to query an interface
+          //TO-DO
+            }
+          },
     }))
   }
 
-    this.complexityScore = this.typeComplexity + this.resolveComplexity;
+    this.complexityScore = this.typeComplexity;
 
-    return {complexityScore: this.complexityScore, typeComplexity: this.typeComplexity, resolveComplexity: this.resolveComplexity};
+    return {complexityScore: this.complexityScore, typeComplexity: this.typeComplexity};
   }
 
-  resolveParentTypeStack(isList: boolean, argumentCosts: number, baseVal: number) {
-    if(isList === true) {
-      for (let i = this.parentTypeStack.length-1; i >= 0; i--) {
-        if(this.parentTypeStack[i].isList === true) {
-        //assuming the list is currently nested within another list, adjust resolve complexity by number of list calls
-        //indicated by the multiplier inherited by the previous list
-        const lastListMultiplier = this.parentTypeStack[i].currMult;
-        this.resolveComplexity += lastListMultiplier;
-        this.resolveComplexity--;
-        this.currMult = this.currMult * lastListMultiplier
-        argumentCosts = argumentCosts * lastListMultiplier
-        break;
+  private resolveSelectionSet(selectionSet: any, objectType: any, schemaType: TypeInfo, mult: number = 1, ancestors : any[], document: DocumentNode, fragDefs: Record<string, number>) {
+    console.log('inside resolveSelectionSet')
+    console.log('mult of current selectionSet?', mult);
+    let cost = 0;
+    const fragStore: Record<string, number> = {};
+    // console.log('ancestors?', ancestors);
+
+    selectionSet.selections.forEach((selection: any) => {
+
+      if(selection.kind === Kind.FRAGMENT_SPREAD) {
+        let fragSpreadMult = mult;
+        let fragSpreadCost = 0;
+        const fragName = selection.name.value;
+        console.log('This is the node:', fragName);
+        //@ts-ignore
+
+        // console.log('doc?', document);
+        const fragDef = document?.definitions.find(def => def.kind === 'FragmentDefinition' && def.name.value === fragName);
+        // console.log('fragDef?', fragDef);
+        //@ts-ignore
+        if(!fragDef) return;
+        //@ts-ignore
+        const typeName = fragDef.typeCondition.name.value;
+        if(fragDefs[typeName]) fragSpreadCost = fragDefs[typeName];
+
+        fragStore[fragName] = fragSpreadCost * fragSpreadMult;
+        console.log('fragSpreadCost?', fragSpreadCost);
+      }
+
+      if(selection.kind === Kind.INLINE_FRAGMENT) {
+        console.log('ancestors in inline-frag?', ancestors)
+        //need to resolve in-line fragments within an interface
+        //some casing here is causing it to fully aggregate the cost of the potential interface resolutions
+        //rather than picking the largest
+        const typeName = selection.typeCondition.name.value;
+        const type = this.schema.getType(typeName);
+
+        ancestors.push(selection)
+
+        const fragCost = this.resolveSelectionSet(selection.selectionSet, type, schemaType, mult, ancestors, document, fragDefs);
+        fragStore[typeName] = fragStore[typeName] || 0;
+        fragStore[typeName] = fragCost;
+
+        ancestors.pop()
+      }
+
+      if(selection.kind === Kind.FIELD) {
+        const fieldName = selection.name.value;
+        let checkSkip: Record<string, number | boolean> | undefined;
+        let skip: boolean = false;
+
+        // This correctly retrieves values for cost argument, just need to case so that it only runs
+        // if the variable is actually populated then otherwise does other stuff, also probably
+        // move to helper function
+        if(this.variables) {
+          checkSkip = this.checkSkip(selection);
+        }
+
+        console.log('name of node?', fieldName);
+        console.log('CHECK SKIP?', checkSkip);
+        let newMult = mult;
+
+        const fieldDef = objectType.getFields()[fieldName];
+        const fieldType = fieldDef.type;
+        const nullableType = getNullableType(fieldType);
+        const unwrappedType = getNamedType(fieldType);
+        const subSelection = selection.selectionSet
+        const slicingArguments = this.parseSlicingArguments(selection)
+        let argCosts;
+
+        if(slicingArguments && slicingArguments.length) {
+          argCosts = this.parseArgumentDirectives(fieldDef, slicingArguments)
+        }
+
+        if(checkSkip && (checkSkip.skip === true || checkSkip.include === false)) skip = true;
+        // console.log('fieldType?', fieldType)
+        const costDirective = this.parseDirectives(fieldDef, 0);
+        if(argCosts && argCosts.length) cost += Number(argCosts[0].directiveValue) * mult
+
+        console.log('SKIP???', skip)
+
+        if(skip === false) costDirective.costDirective ? cost += Number(costDirective.costDirective) * mult : cost += mult;
+        // console.log('type of argCosts', typeof argumentCosts);
+        if(isListType(nullableType)) costDirective.paginationLimit ? newMult *= costDirective.paginationLimit : newMult *= this.config.paginationLimit
+        if(isListType(nullableType) && slicingArguments.length) slicingArguments[0].argumentValue ? newMult = mult * slicingArguments[0].argumentValue : newMult = newMult;
+        console.log('newMult?', newMult)
+
+
+        if(subSelection && (isInterfaceType(unwrappedType) || isObjectType(unwrappedType)) || isUnionType(unwrappedType)) {
+          const types = isInterfaceType(unwrappedType) || isUnionType(unwrappedType) ? this.schema.getPossibleTypes(unwrappedType) : [unwrappedType];
+          const store: Record<string, number> = {};
+          ancestors.push(objectType);
+          if(isInterfaceType(unwrappedType)) console.log('SUBSELECTION:', subSelection);
+
+          // console.log('implementingTypes?', types)
+          types.forEach(type => {
+            console.log('CURRENT STORE STATE:', store);
+            store[type.name] = store[type.name] || 0;
+            store[type.name] = Math.max(store[type.name], this.resolveSelectionSet(subSelection, type, schemaType, newMult, ancestors, document, fragDefs));
+            // store[type.name] += this.resolveSelectionSet(subSelection, type, schemaType, newMult, ancestors, document, fragDefs)
+          })
+
+          console.log('internal store?', store);
+          const maxInterface = Object.values(store).reduce((a, b) => Math.max(a, b));
+          cost += maxInterface;
+
+          ancestors.pop();
         }
       }
+    })
 
-      //base case addition of resolveComplexity, offset in above for-loop for list cases
-        this.resolveComplexity++;
-        this.typeComplexity += (this.currMult * baseVal + argumentCosts);
+    console.log(fragStore);
+    if(Object.values(fragStore).length) cost += Object.values(fragStore).reduce((a, b) => Math.max(a, b));
 
-    } else {
+    return cost;
+  }
 
-      for (let i = this.parentTypeStack.length-1; i >= 0; i--) {
-        if(this.parentTypeStack[i].isList === true) {
-          const lastListMultiplier = this.parentTypeStack[i].currMult;
-          this.resolveComplexity += lastListMultiplier;
-          this.resolveComplexity--;
-          this.currMult = lastListMultiplier
-          break;
-        }
+  private checkSkip(selection: any) {
+    let variables: Record<string, number | boolean> = {};
+
+    if(!selection.directives.length) return;
+
+    for (let i = 0; i < selection.directives.length; i++) {
+      console.log('IN NODE DIRECTIVES FOR LOOP')
+      const directive = selection.directives[i];
+      const directiveName = directive.name.value;
+
+      if(!this.allowedDirectives.includes(directiveName)) continue;
+
+      const directiveArguments = directive.arguments;
+      // console.log('NODE DIRECTIVE ARGUMENTS', directiveArguments);
+
+      if(!directiveArguments.length) continue;
+      if(directiveArguments[0].value.kind !== 'Variable') continue;
+
+      const variable = directiveArguments[0].value.name.value;
+      console.log('VARIABLE NAME?', variable);
+      console.log('VARIABLE STORE?', this.variables)
+      if(this.variables[variable] === undefined) {
+        console.log('There is no association in the variable object with for the variable:', variable);
+        continue;
       }
 
-        //if the currMult === 0 indicates object not nested in list, simply increment complexity score
-      if(this.currMult !== 0) {
-        this.typeComplexity += this.currMult * baseVal + argumentCosts;
-      } else {
-        this.typeComplexity+= baseVal + argumentCosts;
-      }
-        this.resolveComplexity++;
+      console.log('VARIABLE????', this.variables, 'VARIABLE VALUE????', this.variables[variable]);
+
+      if(directiveName === 'skip') variables[directiveName] = this.variables[variable];
+      if(directiveName === 'include') variables[directiveName] = this.variables[variable];
     }
+
+    console.log('FINAL VARIABLES DETECTED?', variables)
+    return variables;
   }
 
-  resolveUnionTypes(fieldType: GraphQLUnionType, paginationLimit: number | null, isList: boolean) {
-    //modularize code
-    //add resolution for union of unions if possible, exists but potentially anti-pattern
-    console.log('Is union a list?', isList);
-    console.log('If there is a list, is there pagination limit defined?', paginationLimit);
-    const unionTypes = this.schema.getPossibleTypes(fieldType);
-    const costAssociation = unionTypes.map(containedType => {
+  private parseSlicingArguments(selection: any) {
+    // console.log('SELECTION?', selection)
+    if(!selection.arguments) return;
+
+    const argumentDirectives = selection.arguments.flatMap((arg: any) => {
+      const argName = arg.name.value;
+      let argValue = arg.value.value;
+      if(arg.value.kind === 'Variable') {
+        console.log('variable argument detected:', arg.value);
+        if(this.variables) argValue = this.variables[arg.value.name.value]
+      }
       return {
-        name: containedType.name, cost: 0, containedMult: 0
-      }
+        argumentName: argName,
+        argumentValue: argValue
+      };
     })
 
-    console.log('storage object pre-resolution', costAssociation)
+    console.log('ARGVARDIRECTIVES???', argumentDirectives)
 
-    unionTypes.forEach(containedType => {
-
-      let containedMult = 1;
-      if(paginationLimit) containedMult *= paginationLimit;
-
-      for(let i = this.parentTypeStack.length-1; i > 0; i--) {
-        if(this.parentTypeStack[i].isList === true) {
-          console.log('Union type is nested within a list/lists');
-          containedMult = containedMult * this.parentTypeStack[i].currMult;
-          console.log(`The original multiplier of ${containedMult} has been updated to the multiplier of the most recent ancestor list, ${this.parentTypeStack[i].currMult}`)
-          break;
-        }
+    return argumentDirectives.filter((arg: any) => {
+      if(!this.slicingArgs.includes(arg.argumentName)) {
+        console.log('not a slicing arg')
+        return;
       }
-
-      costAssociation.forEach(ele => {
-        ele.containedMult = containedMult;
-      })
-
-      console.log('This is the main type', containedType)
-
-      if(!containedType.astNode) return;
-
-      containedType.astNode.fields?.forEach(field => {
-        console.log('sub directives', field.directives)
-        const fieldDirectives = field.directives?.map(directive => {
-          return {
-            name: directive.name,
-            arguments: directive.arguments
-          }
-        })
-
-        fieldDirectives?.forEach(directive => {
-          if(directive.name.value === 'cost'){
-            console.log('Directive args?', directive.arguments)
-            const args = directive.arguments?.map(argument => {
-              return argument.value
-            })
-            args?.forEach(argument => {
-              costAssociation.forEach(ele => {
-                if(ele.name === containedType.name){
-                  if(argument){
-                  console.log('contained arg', argument)
-                  //@ts-ignore
-                  ele.cost += (Number(argument.value) * containedMult);
-                  }
-                }
-              })
-            })
-          }
-        })
-      })
-
+      return arg;
     })
-    console.log('cost associations post-resolution', costAssociation);
-
-    const largestUnion = this.findLargestUnion(costAssociation);
-
-    console.log('Largest union?', largestUnion);
-
-    return largestUnion;
   }
 
-  findLargestUnion(costAssociations: {
-    name: string;
-    cost: number;
-    containedMult: number;
-  }[]){
-    const largestCost = {
-      name: '',
-      cost: -Infinity,
-      containedMult: 0
-    }
-
-    costAssociations.forEach(ele => {
-      if(ele.cost > largestCost.cost){
-        largestCost.name = ele.name;
-        largestCost.cost = ele.cost;
-        largestCost.containedMult = ele.containedMult
-      }
-    })
-
-    return largestCost
-  }
-
-  parseArgumentDirectives(fieldDef: GraphQLField<unknown, unknown, any>) {
+  private parseArgumentDirectives(fieldDef: GraphQLField<unknown, unknown, any>, args: any[]) {
     if(!fieldDef.astNode?.arguments) return
 
     //since the directive costs within directives placed in arguments are deeply nested, we have to use flatMap to efficiently extract them
@@ -448,12 +345,12 @@ class ComplexityAnalysis {
         }));
       });
       console.log('argumentDirectives', argumentDirectives);
-      const argumentCosts = argumentDirectives.filter((directive: any) => directive.directiveName === 'cost');
-      // console.log('arg costs', argumentCosts);
+      const argumentCosts = argumentDirectives.filter((directive: any, index) => (directive.directiveName === 'cost' && args[index].argumentName === directive.argName));
+      console.log('arg costs', argumentCosts);
       return argumentCosts;
   }
 
-  parseDirectives(fieldDef: GraphQLField<unknown, unknown, any>, baseVal: number) {
+  private parseDirectives(fieldDef: GraphQLField<unknown, unknown, any>, baseVal: number) {
     if(!fieldDef.astNode?.directives) return {costDirective: baseVal, paginationLimit: null};
 
     const directives = this.getDirectives(fieldDef.astNode.directives);
@@ -467,7 +364,7 @@ class ComplexityAnalysis {
     return {costDirective: baseVal, paginationLimit: costPaginationDirectives?.paginationLimit};
   }
 
-  getDirectives(astNodeDirectives: readonly graphql.ConstDirectiveNode[]) {
+  private getDirectives(astNodeDirectives: readonly graphql.ConstDirectiveNode[]) {
     const directives: DirectivesInfo[] = astNodeDirectives.map(directives => ({
       name: directives.name,
       arguments: directives.arguments as readonly graphql.ConstArgumentNode[]
@@ -476,7 +373,8 @@ class ComplexityAnalysis {
     return directives;
   }
 
-  getCostDirectives(directives: DirectivesInfo[], baseVal: number) {
+
+  private getCostDirectives(directives: DirectivesInfo[], baseVal: number) {
     if(!directives.length) return
 
     let listLimit = 0;
@@ -499,28 +397,38 @@ class ComplexityAnalysis {
     return {costDirective: baseVal, paginationLimit: listLimit}
   }
 
-  hasUnionAncestor() {
-    let hasUnionAncestor = false;
-    for(let i = this.parentTypeStack.length-1; i >= 0; i--) {
-      if(this.parentTypeStack[i].isUnion) hasUnionAncestor = true;
-    }
-
-    return hasUnionAncestor;
-  }
-
 }
 
 //end of class
 
-const rateLimiter = function (config: any) {
+// helper function to send data to web-app
+const sendData = async (endpointData: any) => {
+  console.log('Monitor data: ', endpointData)
+  try {
+    const response = await fetch('http://localhost:3000/api/data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(endpointData)
+    });
+    const data = await response.json();
+  }
+  catch {
+    console.log('Unable to save to database')
+  }
+}
+
+const expressRateLimiter = function (config: any) {
 
   let tokenBucket: TokenBucket = {};
   return async (req: Request, res: Response, next: NextFunction) => {
     if(req.body.query) {
+      const builtSchema = config.schema
+      const parsedAst = req.body.query
 
-      const builtSchema = buildSchema(testSDLPolymorphism)
-      const schemaType = new TypeInfo(builtSchema);
-      const parsedAst = parse(testQueryPolymorphism);
+      let variables;
+      if(req.body.variables) variables = req.body.variables;
 
       let requestIP = req.ip
 
@@ -529,12 +437,11 @@ const rateLimiter = function (config: any) {
         requestIP = requestIP.replace('::ffff:', '');
       }
 
-      const analysis = new ComplexityAnalysis(builtSchema, parsedAst, config);
+      const analysis = new ComplexityAnalysis(builtSchema, parsedAst, config, variables);
 
       const complexityScore = analysis.traverseAST();
 
       console.log('This is the type complexity', complexityScore.typeComplexity);
-      console.log('This is the resolve complexity', complexityScore.resolveComplexity);
       console.log('This is the complexity score:', complexityScore.complexityScore);
 
       //returns error if complexity heuristic reads complexity score over limit
@@ -543,32 +450,36 @@ const rateLimiter = function (config: any) {
 
       // if the user wants to use redis, a redis client will be created and used as a cache
       if (config.redis === true) {
-        await cache.redis(config, complexityScore.complexityScore, req, res, next)
+        await expressCache.redis(config, complexityScore.complexityScore, req, res, next)
       }
       // if the user does not want to use redis, the cache will be saved in the "tokenBucket" object
       else if (config.redis !== true) {
-        tokenBucket = cache.nonRedis(config, complexityScore.complexityScore, tokenBucket, req)
-        const error = {
-          errors: [
-            {
-              message: `Token limit exceeded`,
-              extensions: {
-                cost: {
-                  requestedQueryCost: complexityScore.complexityScore,
-                  currentTokensAvailable:  Number(tokenBucket[requestIP].tokens.toFixed(2)),
-                  maximumTokensAvailable: config.complexityLimit,
-                },
-                responseDetails: {
-                  status: 429,
-                  statusText: 'Too Many Requests',
+        tokenBucket = expressCache.nonRedis(config, complexityScore.complexityScore, tokenBucket, req)
+        if (complexityScore.complexityScore >= tokenBucket[requestIP].tokens) {
+          if (res.locals.gleiphqlData) {
+            res.locals.gleiphqlData.blocked = true
+            res.locals.gleiphqlData.complexityLimit = config.complexityLimit
+            res.locals.gleiphqlData.complexityScore = complexityScore
+            sendData(res.locals.gleiphqlData)
+          }
+          const error = {
+            errors: [
+              {
+                message: `Token limit exceeded`,
+                extensions: {
+                  cost: {
+                    requestedQueryCost: complexityScore.complexityScore,
+                    currentTokensAvailable:  Number(tokenBucket[requestIP].tokens.toFixed(2)),
+                    maximumTokensAvailable: config.complexityLimit,
+                  },
+                  responseDetails: {
+                    status: 429,
+                    statusText: 'Too Many Requests',
+                  }
                 }
               }
-            }
-          ]
-        }
-
-        if (complexityScore.complexityScore >= tokenBucket[requestIP].tokens) {
-
+            ]
+          }
           console.log('Complexity of this query is too high');
           res.status(429).json(error);
           return next(Error);
@@ -576,10 +487,83 @@ const rateLimiter = function (config: any) {
         console.log('Tokens before subtraction: ', tokenBucket[requestIP].tokens)
         tokenBucket[requestIP].tokens -= complexityScore.complexityScore;
         console.log('Tokens after subtraction: ', tokenBucket[requestIP].tokens)
+        if (res.locals.gleiphqlData) {
+          res.locals.gleiphqlData.complexityLimit = config.complexityLimit
+          res.locals.gleiphqlData.complexityScore = complexityScore
+          sendData(res.locals.gleiphqlData)
+        }
       }
-
     };
   return next();
   }
 }
-export default rateLimiter;
+
+const apolloRateLimiter = (config: any) => {
+
+  let tokenBucket: TokenBucket = {};
+  return {
+    async requestDidStart(requestContext: any) {
+      return {
+        async didResolveOperation(requestContext: any) {
+          if (requestContext.operationName !== 'IntrospectionQuery') {
+            console.log('Validation started!');
+            const variables = requestContext.variables;
+            const builtSchema = requestContext.schema
+            const parsedAst = requestContext.document
+            config.requestContext = requestContext
+            let requestIP = requestContext.contextValue.clientIP
+
+            // fixes format of ip addresses
+            if (requestIP.includes('::ffff:')) {
+              requestIP = requestIP.replace('::ffff:', '');
+            }
+
+            const analysis = new ComplexityAnalysis(builtSchema, parsedAst, config, variables);
+
+            const complexityScore = analysis.traverseAST();
+            requestContext.contextValue.complexityScore = complexityScore
+            requestContext.contextValue.complexityLimit = config.complexityLimit
+            console.log('This is the type complexity', complexityScore.typeComplexity);
+            console.log('This is the complexity score:', complexityScore.complexityScore);
+
+            // if the user wants to use redis, a redis client will be created and used as a cache
+            if (config.redis === true) {
+              await apolloCache.redis(config, complexityScore.complexityScore, requestContext)
+            }
+            // if the user does not want to use redis, the cache will be saved in the "tokenBucket" object
+            else if (config.redis !== true) {
+              tokenBucket = apolloCache.nonRedis(config, complexityScore.complexityScore, tokenBucket)
+
+              if (complexityScore.complexityScore >= tokenBucket[requestIP].tokens) {
+                requestContext.contextValue.blocked = true
+                console.log('Complexity of this query is too high');
+                throw new GraphQLError('Complexity of this query is too high', {
+                  extensions: {
+                    cost: {
+                      requestedQueryCost: complexityScore.complexityScore,
+                      currentTokensAvailable:  Number(tokenBucket[requestIP].tokens.toFixed(2)),
+                      maximumTokensAvailable: config.complexityLimit,
+                    }
+                  },
+                });
+
+              }
+              console.log('Tokens before subtraction: ', tokenBucket[requestIP].tokens)
+              tokenBucket[requestIP].tokens -= complexityScore.complexityScore;
+              console.log('Tokens after subtraction: ', tokenBucket[requestIP].tokens)
+            }
+          }
+        },
+      };
+    },
+  }
+};
+
+const gleiphqlContext = async ({ req }: { req: Request }) => {
+  const clientIP =
+    req.headers['x-forwarded-for'] || // For reverse proxies
+    req.socket.remoteAddress;
+  return { clientIP };
+}
+
+export { expressRateLimiter, apolloRateLimiter, gleiphqlContext }
