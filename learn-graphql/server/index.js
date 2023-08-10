@@ -1,5 +1,5 @@
 // testing npm package install
-import { apolloRateLimiter, apolloEndpointMonitor, gleiphqlContext } from '@larkinaj/test2';
+
 import { startStandaloneServer }  from '@apollo/server/standalone';
 
 import pkg from 'graphql';
@@ -27,10 +27,6 @@ import json from 'body-parser';
 
 
 // Configuration for the expressEndpointMonitor middleware.
-const monitorConfig = {
-  gliephqlUsername: 'andrew@gmail.com',
-  gleiphqlPassword: 'password',
-};
 
 const apolloConfig = {
   complexityLimit: 3000,
@@ -90,8 +86,6 @@ const server = new ApolloServer({
   resolvers,
   plugins: [
     ApolloServerPluginDrainHttpServer({ httpServer }),
-    apolloRateLimiter(apolloConfig),
-    apolloEndpointMonitor(monitorConfig)
   ],
 })
 
@@ -121,8 +115,7 @@ server.start().then(() => {
     json(),
     expressMiddleware(server, {
       context: 
-        //async ({ req }) => ({ token: req.headers.token }),
-        gleiphqlContext
+        async ({ req }) => ({ token: req.headers.token }),
     }),
   );
 
